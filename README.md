@@ -8,7 +8,7 @@ for the full product/architecture spec. This README covers backend setup only
 
 ```bash
 npm install
-cp .env.example .env.local   # fill in keys as they become available
+cp .env.example .env         # fill in keys as they become available
 npm run dev                  # http://localhost:3000
 ```
 
@@ -81,7 +81,7 @@ Covers ranking (weight redistribution when signals are missing), retry
 call), and a full demo-mode plan → execute round trip.
 
 **2. Each integration in isolation** — once you have that integration's env
-vars in `.env.local`, call its adapter directly, no server needed:
+vars in `.env`, call its adapter directly, no server needed:
 
 ```bash
 npm run check:maps -- "grocery store near Fenway, Boston"
@@ -99,9 +99,12 @@ something you type in by hand, it comes from a one-time consent flow:
 npm run oauth:google
 ```
 
-It prints a Google consent URL, you approve access, paste back the `code`
-from the redirected (broken, that's expected) URL, and it prints the
-refresh token to add to `.env.local`.
+It opens a Google consent URL in your browser and a temporary local server
+catches the redirect automatically — no copy-pasting a code by hand. It then
+prints the refresh token to add to `.env`. This requires the OAuth
+client in Google Cloud Console to be of type **Desktop app** (see
+`.env.example`), which is what grants the loopback redirect exception this
+relies on.
 
 `npm run fetch:essentials -- --address "..."` (or `--lat`/`--lng`) is a
 standalone CLI that calls the live Places + Routes APIs directly and prints
@@ -119,7 +122,7 @@ production integration in `src/integrations/`, write local `credentials.json`
 **3. Full MVP against the three live APIs**
 
 ```bash
-# .env.local: all three integrations' keys set, DEMO_MODE=false
+# .env: all three integrations' keys set, DEMO_MODE=false
 npm run dev
 curl -X POST http://localhost:3000/api/plan -H "Content-Type: application/json" -d '{
   "destination":"Boston, MA",

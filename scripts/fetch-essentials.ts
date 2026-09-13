@@ -11,14 +11,17 @@
  * engine used by the app (src/agent/ranking.ts — CLAUDE.md "Ranking"), and
  * prints a presentable, sorted report per category instead of a raw dump.
  *
- * Loads GOOGLE_MAPS_API_KEY from .env.local automatically (Node 20.12+ /
- * 21.7+ native env file loading — no dotenv package needed).
+ * Loads GOOGLE_MAPS_API_KEY from .env.local (if present) or .env
+ * automatically (Node 20.12+ / 21.7+ native env file loading — no dotenv
+ * package needed).
  */
 
+import { existsSync } from "node:fs";
+
 try {
-  process.loadEnvFile?.(".env.local");
+  process.loadEnvFile?.(existsSync(".env.local") ? ".env.local" : ".env");
 } catch {
-  // .env.local doesn't exist or isn't readable — fall through and let the
+  // Neither file exists or is readable — fall through and let the
   // GOOGLE_MAPS_API_KEY check below give a clear error instead.
 }
 
@@ -31,7 +34,7 @@ import type { NormalizedPlace, PlaceRecommendation, UserPreferenceProfile } from
  * there's a second caller that needs it. */
 async function geocodeAddress(address: string): Promise<{ lat: number; lng: number }> {
   const key = process.env.GOOGLE_MAPS_API_KEY;
-  if (!key) throw new Error("GOOGLE_MAPS_API_KEY is not set (check .env.local)");
+  if (!key) throw new Error("GOOGLE_MAPS_API_KEY is not set (check .env)");
 
   const url = new URL("https://maps.googleapis.com/maps/api/geocode/json");
   url.searchParams.set("address", address);

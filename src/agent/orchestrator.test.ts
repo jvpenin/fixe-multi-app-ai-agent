@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { generatePlan, executeApprovedActions, demoPlanRequest } from "@/agent/orchestrator";
-import { LandingPlanSchema, ExecuteResponseSchema } from "@/agent/schemas";
+import {
+  generatePlan,
+  executeApprovedActions,
+  demoPlanRequest,
+  pickOpenCandidate,
+} from "@/agent/orchestrator";
+import { LandingPlanSchema, ExecuteResponseSchema, type PlaceRecommendation } from "@/agent/schemas";
 
 describe("orchestrator (demo mode, no live credentials required)", () => {
   it("generates a valid LandingPlan from fixtures", async () => {
@@ -36,6 +41,56 @@ describe("orchestrator (demo mode, no live credentials required)", () => {
     await expect(
       executeApprovedActions({ planId: "does-not-exist", approvedActionIds: ["x"] }),
     ).rejects.toThrow(/Unknown planId/);
+  });
+
+  it("warns when the estimated essentials total exceeds the budget (section 7: 'Budget baixo')", async () => {
+    // Enforcement itself happens at approval time (see "approval with edited
+    // essentials" below) — this only checks the plan is explainable upfront.
+    const plan = await generatePlan({ ...demoPlanRequest, demoMode: true, budget: 0.5 });
+    expect(plan.warnings.some((w) => w.includes("exceeds the stated budget"))).toBe(true);
+  });
+});
+
+describe("pickOpenCandidate (section 7: 'Lugar fechado')", () => {
+  const base: Omit<PlaceRecommendation, "placeId" | "name" | "openNow" | "score"> = {
+    category: "restaurant",
+    location: { lat: 0, lng: 0 },
+    scoreBreakdown: {},
+    missingSignals: [],
+  };
+
+  it("excludes the top-ranked candidate when it's closed, and picks the next open one", () => {
+    const recommendations: PlaceRecommendation[] = [
+      { ...base, placeId: "closed-top", name: "Closed Top Pick", openNow: false, score: 0.9 },
+      { ...base, placeId: "open-second", name: "Open Runner Up", openNow: true, score: 0.6 },
+    ];
+    const warnings: string[] = [];
+    const chosen = pickOpenCandidate(recommendations, "restaurant", warnings);
+
+    expect(chosen?.placeId).toBe("open-second");
+    expect(warnings.some((w) => w.includes("Closed Top Pick") && w.includes("closed"))).toBe(true);
+  });
+
+  it("proposes nothing and warns when every candidate is closed", () => {
+    const recommendations: PlaceRecommendation[] = [
+      { ...base, placeId: "closed-only", name: "Only Option", openNow: false, score: 0.9 },
+    ];
+    const warnings: string[] = [];
+    const chosen = pickOpenCandidate(recommendations, "restaurant", warnings);
+
+    expect(chosen).toBeUndefined();
+    expect(warnings.some((w) => w.includes("No open restaurant found"))).toBe(true);
+  });
+
+  it("does not warn when the top candidate is already open", () => {
+    const recommendations: PlaceRecommendation[] = [
+      { ...base, placeId: "open-top", name: "Open Top Pick", openNow: true, score: 0.9 },
+    ];
+    const warnings: string[] = [];
+    const chosen = pickOpenCandidate(recommendations, "restaurant", warnings);
+
+    expect(chosen?.placeId).toBe("open-top");
+    expect(warnings).toHaveLength(0);
   });
 });
 

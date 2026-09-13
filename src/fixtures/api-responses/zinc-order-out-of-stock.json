@@ -1,0 +1,11 @@
+{
+  "id": "550e8400-e29b-41d4-a716-446655440098",
+  "status": "order_failed",
+  "merchant_order_ids": [],
+  "job_result": {
+    "success": false,
+    "error": "out_of_stock"
+  },
+  "created_at": "2026-09-13T12:00:00Z",
+  "updated_at": "2026-09-13T12:03:00Z"
+}

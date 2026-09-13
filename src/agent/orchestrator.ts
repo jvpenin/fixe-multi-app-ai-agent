@@ -95,13 +95,19 @@ export async function generatePlan(request: PlanRequest): Promise<LandingPlan> {
     essentials,
     events,
     arrivalAt: request.arrivalAt,
+    warnings,
   });
 
+  // The proposed Zinc order lists everything available and lets the user
+  // approve, edit (excludedEssentialIds), or reject it — see
+  // executeApprovedActions' budget check, which is the actual enforcement
+  // point (RF11 / RNF07: "nunca executar acima do teto"). This total is
+  // informational so the plan is explainable before that gate.
   const essentialsTotalCents = essentials
     .filter((item) => item.available)
     .reduce((sum, item) => sum + item.priceCents * item.quantity, 0);
   if (essentialsTotalCents / 100 > request.budget) {
-    warnings.push("Estimated essentials total exceeds the stated budget.");
+    warnings.push("Estimated essentials total exceeds the stated budget; remove items before approving.");
   }
 
   const plan = LandingPlanSchema.parse({
@@ -248,13 +254,14 @@ function buildProposedActions(args: {
   essentials: EssentialItem[];
   events: googleCalendar.CalendarEvent[];
   arrivalAt: string;
+  warnings: string[];
 }): ProposedAction[] {
   const actions: ProposedAction[] = [];
   const windowStart = new Date(args.arrivalAt);
   const windowEnd = new Date(windowStart.getTime() + SEVENTY_TWO_HOURS_MS);
   const busy = [...args.events];
 
-  const topGrocery = args.recommendations.find((r) => r.category === "grocery");
+  const topGrocery = pickOpenCandidate(args.recommendations, "grocery", args.warnings);
   const grocerySlot = topGrocery && findFreeSlot(busy, windowStart, windowEnd, 45);
   if (topGrocery && grocerySlot) {
     busy.push({ id: "proposed-grocery", summary: "Grocery run", ...grocerySlot });
@@ -272,7 +279,7 @@ function buildProposedActions(args: {
     });
   }
 
-  const topRestaurant = args.recommendations.find((r) => r.category === "restaurant");
+  const topRestaurant = pickOpenCandidate(args.recommendations, "restaurant", args.warnings);
   const mealSlot = topRestaurant && findFreeSlot(busy, windowStart, windowEnd, 60);
   if (topRestaurant && mealSlot) {
     actions.push({
@@ -289,6 +296,9 @@ function buildProposedActions(args: {
     });
   }
 
+  // Proposes everything available; budget enforcement happens at approval
+  // time in executeApprovedActions (the user edits the cart there via
+  // excludedEssentialIds before it's ever executed).
   const availableEssentials = args.essentials.filter((item) => item.available);
   if (availableEssentials.length > 0) {
     actions.push({
@@ -308,6 +318,32 @@ function buildProposedActions(args: {
   }
 
   return actions;
+}
+
+/**
+ * Picks the highest-ranked candidate in `category` that isn't closed at the
+ * proposed time. `recommendations` is already sorted best-first by
+ * rankPlaces(), so a closed place ahead of the chosen one is explicitly
+ * skipped and logged — never silently proposed (doc section 7, "Lugar
+ * fechado": "Excluir candidato ou alertar explicitamente").
+ */
+export function pickOpenCandidate(
+  recommendations: ReturnType<typeof rankPlaces>,
+  category: "grocery" | "restaurant",
+  warnings: string[],
+): ReturnType<typeof rankPlaces>[number] | undefined {
+  const candidates = recommendations.filter((r) => r.category === category);
+  const chosen = candidates.find((r) => r.openNow !== false);
+  for (const place of candidates) {
+    if (place === chosen) break;
+    if (place.openNow === false) {
+      warnings.push(`${place.name} ranked highest for ${category} but is closed at the proposed time; excluded.`);
+    }
+  }
+  if (!chosen && candidates.length > 0) {
+    warnings.push(`No open ${category} found among the recommendations; no ${category} action proposed.`);
+  }
+  return chosen;
 }
 
 function findFreeSlot(
@@ -350,12 +386,18 @@ export async function executeApprovedActions(request: ExecuteRequest): Promise<E
     throw new Error("Unknown essential item");
   }
   const cartKey = JSON.stringify(excluded);
-  const includesOrder = plan.proposedActions.some(a => a.integration === "zinc" && request.approvedActionIds.includes(a.actionId));
+  const zincAction = plan.proposedActions.find((a) => a.integration === "zinc");
+  const includesOrder = zincAction !== undefined && request.approvedActionIds.includes(zincAction.actionId);
   if (includesOrder) {
     if (entry.approvedCart !== undefined && entry.approvedCart !== cartKey) {
       throw new Error("This order was already approved with a different cart. Build a new plan to change it.");
     }
-    const items = plan.essentials.filter(item => item.available && !excluded.includes(item.productId));
+    // Validate against the proposed action's own payload (the actual order
+    // that will be sent to Zinc) rather than re-deriving the list from
+    // plan.essentials — they happen to match today, but this stays correct
+    // if the two ever diverge (e.g. per-item exclusions upstream).
+    const proposedItems = zincAction.payload.items as { productId: string; priceCents: number; quantity: number }[];
+    const items = proposedItems.filter((item) => !excluded.includes(item.productId));
     if (!items.length) throw new Error("Select at least one essential or deselect the Zinc order.");
     if (items.reduce((sum, item) => sum + item.priceCents * item.quantity, 0) > Math.round(plan.profile.budget * 100)) {
       throw new Error("The approved essentials exceed your budget.");

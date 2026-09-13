@@ -82,20 +82,23 @@ export async function generatePlan(request: PlanRequest): Promise<LandingPlan> {
 
   const recommendations = rankPlaces(places, profile);
   const planId = randomUUID();
+  // Trim to what actually fits the budget BEFORE proposing the order — RF11 /
+  // RNF07 require never executing above the stated cap, not just warning
+  // about it after the fact.
+  const affordableEssentials = fitEssentialsToBudget(essentials, request.budget, warnings);
   const proposedActions = buildProposedActions({
     planId,
     recommendations,
-    essentials,
+    essentials: affordableEssentials,
     events,
     arrivalAt: request.arrivalAt,
+    warnings,
   });
 
-  const essentialsTotalCents = essentials
-    .filter((item) => item.available)
-    .reduce((sum, item) => sum + item.priceCents * item.quantity, 0);
-  if (essentialsTotalCents / 100 > request.budget) {
-    warnings.push("Estimated essentials total exceeds the stated budget.");
-  }
+  const essentialsTotalCents = affordableEssentials.reduce(
+    (sum, item) => sum + item.priceCents * item.quantity,
+    0,
+  );
 
   const plan = LandingPlanSchema.parse({
     planId,
@@ -228,13 +231,14 @@ function buildProposedActions(args: {
   essentials: EssentialItem[];
   events: googleCalendar.CalendarEvent[];
   arrivalAt: string;
+  warnings: string[];
 }): ProposedAction[] {
   const actions: ProposedAction[] = [];
   const windowStart = new Date(args.arrivalAt);
   const windowEnd = new Date(windowStart.getTime() + SEVENTY_TWO_HOURS_MS);
   const busy = [...args.events];
 
-  const topGrocery = args.recommendations.find((r) => r.category === "grocery");
+  const topGrocery = pickOpenCandidate(args.recommendations, "grocery", args.warnings);
   const grocerySlot = topGrocery && findFreeSlot(busy, windowStart, windowEnd, 45);
   if (topGrocery && grocerySlot) {
     busy.push({ id: "proposed-grocery", summary: "Grocery run", ...grocerySlot });
@@ -252,7 +256,7 @@ function buildProposedActions(args: {
     });
   }
 
-  const topRestaurant = args.recommendations.find((r) => r.category === "restaurant");
+  const topRestaurant = pickOpenCandidate(args.recommendations, "restaurant", args.warnings);
   const mealSlot = topRestaurant && findFreeSlot(busy, windowStart, windowEnd, 60);
   if (topRestaurant && mealSlot) {
     actions.push({
@@ -269,6 +273,8 @@ function buildProposedActions(args: {
     });
   }
 
+  // args.essentials already went through fitEssentialsToBudget() in
+  // generatePlan(), so this is only the availability filter.
   const availableEssentials = args.essentials.filter((item) => item.available);
   if (availableEssentials.length > 0) {
     actions.push({
@@ -288,6 +294,68 @@ function buildProposedActions(args: {
   }
 
   return actions;
+}
+
+/**
+ * Picks the highest-ranked candidate in `category` that isn't closed at the
+ * proposed time. `recommendations` is already sorted best-first by
+ * rankPlaces(), so a closed place ahead of the chosen one is explicitly
+ * skipped and logged — never silently proposed (doc section 7, "Lugar
+ * fechado": "Excluir candidato ou alertar explicitamente").
+ */
+export function pickOpenCandidate(
+  recommendations: ReturnType<typeof rankPlaces>,
+  category: "grocery" | "restaurant",
+  warnings: string[],
+): ReturnType<typeof rankPlaces>[number] | undefined {
+  const candidates = recommendations.filter((r) => r.category === category);
+  const chosen = candidates.find((r) => r.openNow !== false);
+  for (const place of candidates) {
+    if (place === chosen) break;
+    if (place.openNow === false) {
+      warnings.push(`${place.name} ranked highest for ${category} but is closed at the proposed time; excluded.`);
+    }
+  }
+  if (!chosen && candidates.length > 0) {
+    warnings.push(`No open ${category} found among the recommendations; no ${category} action proposed.`);
+  }
+  return chosen;
+}
+
+/**
+ * Keeps only as many available essentials as fit under `budget` (in the plan
+ * request's currency units, e.g. dollars), in the order they were ranked/
+ * returned. Never lets the proposed Zinc order exceed the stated cap (doc
+ * section 7, "Budget baixo": "Remover ou substituir itens; nunca executar
+ * acima do teto").
+ */
+export function fitEssentialsToBudget(
+  essentials: EssentialItem[],
+  budget: number,
+  warnings: string[],
+): EssentialItem[] {
+  const budgetCents = Math.round(budget * 100);
+  const fitted: EssentialItem[] = [];
+  const dropped: string[] = [];
+  let runningTotalCents = 0;
+
+  for (const item of essentials) {
+    if (!item.available) continue;
+    const itemTotalCents = item.priceCents * item.quantity;
+    if (runningTotalCents + itemTotalCents <= budgetCents) {
+      fitted.push(item);
+      runningTotalCents += itemTotalCents;
+    } else {
+      dropped.push(item.title);
+    }
+  }
+
+  if (dropped.length > 0) {
+    warnings.push(
+      `Removed ${dropped.length} essential item(s) to stay within the ${budget} budget: ${dropped.join(", ")}.`,
+    );
+  }
+  return fitted;
 }
 
 function findFreeSlot(

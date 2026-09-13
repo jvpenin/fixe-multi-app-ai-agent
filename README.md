@@ -257,4 +257,4 @@ Destination onboarding collects street, number, optional unit, city, optional st
 
 ## Demo video
 
-[https://www.loom.com/share/cabd03bb7e294e259d7a031f25f42bb3](https://www.loom.com/share/cabd03bb7e294e259d7a031f25f42bb3)
+https://www.loom.com/share/cabd03bb7e294e259d7a031f25f42bb3

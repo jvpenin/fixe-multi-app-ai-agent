@@ -135,6 +135,7 @@ export type LandingPlan = z.infer<typeof LandingPlanSchema>;
 export const PlanRequestSchema = z.object({
   destination: z.string().min(1),
   approximateAddress: z.string().min(1),
+  destinationPlaceId: z.string().min(1).optional(),
   arrivalAt: z.string().datetime(),
   budget: z.number().nonnegative(),
   favoritePlaceIds: z.array(z.string()).default([]),
@@ -153,6 +154,7 @@ export type PlanRequest = z.infer<typeof PlanRequestSchema>;
 export const ExecuteRequestSchema = z.object({
   planId: z.string(),
   approvedActionIds: z.array(z.string()).min(1),
+  excludedEssentialIds: z.array(z.string()).optional(),
 });
 export type ExecuteRequest = z.infer<typeof ExecuteRequestSchema>;
 

@@ -85,23 +85,26 @@ export async function generatePlan(request: PlanRequest): Promise<LandingPlan> {
 
   const recommendations = rankPlaces(places, profile);
   const planId = randomUUID();
-  // Trim to what actually fits the budget BEFORE proposing the order — RF11 /
-  // RNF07 require never executing above the stated cap, not just warning
-  // about it after the fact.
-  const affordableEssentials = fitEssentialsToBudget(essentials, request.budget, warnings);
   const proposedActions = buildProposedActions({
     planId,
     recommendations,
-    essentials: affordableEssentials,
+    essentials,
     events,
     arrivalAt: request.arrivalAt,
     warnings,
   });
 
-  const essentialsTotalCents = affordableEssentials.reduce(
-    (sum, item) => sum + item.priceCents * item.quantity,
-    0,
-  );
+  // The proposed Zinc order lists everything available and lets the user
+  // approve, edit (excludedEssentialIds), or reject it — see
+  // executeApprovedActions' budget check, which is the actual enforcement
+  // point (RF11 / RNF07: "nunca executar acima do teto"). This total is
+  // informational so the plan is explainable before that gate.
+  const essentialsTotalCents = essentials
+    .filter((item) => item.available)
+    .reduce((sum, item) => sum + item.priceCents * item.quantity, 0);
+  if (essentialsTotalCents / 100 > request.budget) {
+    warnings.push("Estimated essentials total exceeds the stated budget; remove items before approving.");
+  }
 
   const plan = LandingPlanSchema.parse({
     planId,
@@ -285,8 +288,9 @@ function buildProposedActions(args: {
     });
   }
 
-  // args.essentials already went through fitEssentialsToBudget() in
-  // generatePlan(), so this is only the availability filter.
+  // Proposes everything available; budget enforcement happens at approval
+  // time in executeApprovedActions (the user edits the cart there via
+  // excludedEssentialIds before it's ever executed).
   const availableEssentials = args.essentials.filter((item) => item.available);
   if (availableEssentials.length > 0) {
     actions.push({
@@ -334,42 +338,6 @@ export function pickOpenCandidate(
   return chosen;
 }
 
-/**
- * Keeps only as many available essentials as fit under `budget` (in the plan
- * request's currency units, e.g. dollars), in the order they were ranked/
- * returned. Never lets the proposed Zinc order exceed the stated cap (doc
- * section 7, "Budget baixo": "Remover ou substituir itens; nunca executar
- * acima do teto").
- */
-export function fitEssentialsToBudget(
-  essentials: EssentialItem[],
-  budget: number,
-  warnings: string[],
-): EssentialItem[] {
-  const budgetCents = Math.round(budget * 100);
-  const fitted: EssentialItem[] = [];
-  const dropped: string[] = [];
-  let runningTotalCents = 0;
-
-  for (const item of essentials) {
-    if (!item.available) continue;
-    const itemTotalCents = item.priceCents * item.quantity;
-    if (runningTotalCents + itemTotalCents <= budgetCents) {
-      fitted.push(item);
-      runningTotalCents += itemTotalCents;
-    } else {
-      dropped.push(item.title);
-    }
-  }
-
-  if (dropped.length > 0) {
-    warnings.push(
-      `Removed ${dropped.length} essential item(s) to stay within the ${budget} budget: ${dropped.join(", ")}.`,
-    );
-  }
-  return fitted;
-}
-
 function findFreeSlot(
   events: googleCalendar.CalendarEvent[],
   windowStart: Date,
@@ -410,12 +378,18 @@ export async function executeApprovedActions(request: ExecuteRequest): Promise<E
     throw new Error("Unknown essential item");
   }
   const cartKey = JSON.stringify(excluded);
-  const includesOrder = plan.proposedActions.some(a => a.integration === "zinc" && request.approvedActionIds.includes(a.actionId));
+  const zincAction = plan.proposedActions.find((a) => a.integration === "zinc");
+  const includesOrder = zincAction !== undefined && request.approvedActionIds.includes(zincAction.actionId);
   if (includesOrder) {
     if (entry.approvedCart !== undefined && entry.approvedCart !== cartKey) {
       throw new Error("This order was already approved with a different cart. Build a new plan to change it.");
     }
-    const items = plan.essentials.filter(item => item.available && !excluded.includes(item.productId));
+    // Validate against the proposed action's own payload (the actual order
+    // that will be sent to Zinc) rather than re-deriving the list from
+    // plan.essentials — they happen to match today, but this stays correct
+    // if the two ever diverge (e.g. per-item exclusions upstream).
+    const proposedItems = zincAction.payload.items as { productId: string; priceCents: number; quantity: number }[];
+    const items = proposedItems.filter((item) => !excluded.includes(item.productId));
     if (!items.length) throw new Error("Select at least one essential or deselect the Zinc order.");
     if (items.reduce((sum, item) => sum + item.priceCents * item.quantity, 0) > Math.round(plan.profile.budget * 100)) {
       throw new Error("The approved essentials exceed your budget.");

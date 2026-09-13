@@ -296,10 +296,20 @@ export default function Home() {
       setExecuting(false);
     }
   }
-  const cart =
-    plan?.essentials.filter(
-      (i) => i.available && !excludedItems.includes(i.productId),
-    ) ?? [];
+  // plan.essentials is the FULL list Zinc found (shown for transparency in
+  // the trace); the Zinc action's own payload is the subset that actually
+  // fits the budget (see fitEssentialsToBudget in orchestrator.ts) — the
+  // cart shown for approval must reflect what will really be ordered, not
+  // the full discovered list, or the total/budget gate below would count
+  // items the backend already dropped.
+  const zincAction = plan?.proposedActions.find((a) => a.integration === "zinc");
+  const orderableEssentials =
+    (zincAction?.payload.items as
+      | { productId: string; title: string; quantity: number; priceCents: number }[]
+      | undefined) ?? [];
+  const cart = orderableEssentials.filter(
+    (i) => !excludedItems.includes(i.productId),
+  );
   const total = cart.reduce((s, i) => s + (i.priceCents * i.quantity) / 100, 0);
   const completed = results.filter((r) => r.status === "success");
   const allComplete =

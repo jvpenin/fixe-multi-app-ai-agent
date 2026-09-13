@@ -43,27 +43,11 @@ describe("orchestrator (demo mode, no live credentials required)", () => {
     ).rejects.toThrow(/Unknown planId/);
   });
 
-  it("never proposes a Zinc order above the stated budget (section 7: 'Budget baixo')", async () => {
-    // Fixture essentials: towels 14.99, sheets 29.99, toiletries 18.99 (available),
-    // powerstrip 21.99 (unavailable, ignored). A $20 budget only fits the towels.
-    const plan = await generatePlan({ ...demoPlanRequest, demoMode: true, budget: 20 });
-
-    const zincAction = plan.proposedActions.find((a) => a.integration === "zinc");
-    const items = (zincAction?.payload as { items: { priceCents: number; quantity: number }[] } | undefined)
-      ?.items ?? [];
-    const orderedTotalCents = items.reduce((sum, item) => sum + item.priceCents * item.quantity, 0);
-
-    expect(orderedTotalCents).toBeLessThanOrEqual(2000);
-    expect(plan.estimatedTotal).toBeLessThanOrEqual(20);
-    expect(plan.warnings.some((w) => w.includes("Removed") && w.includes("budget"))).toBe(true);
-  });
-
-  it("proposes no Zinc order at all when nothing fits the budget", async () => {
+  it("warns when the estimated essentials total exceeds the budget (section 7: 'Budget baixo')", async () => {
+    // Enforcement itself happens at approval time (see "approval with edited
+    // essentials" below) — this only checks the plan is explainable upfront.
     const plan = await generatePlan({ ...demoPlanRequest, demoMode: true, budget: 0.5 });
-
-    expect(plan.proposedActions.some((a) => a.integration === "zinc")).toBe(false);
-    expect(plan.estimatedTotal).toBe(0);
-    expect(plan.warnings.some((w) => w.includes("Removed 3 essential item(s)"))).toBe(true);
+    expect(plan.warnings.some((w) => w.includes("exceeds the stated budget"))).toBe(true);
   });
 });
 

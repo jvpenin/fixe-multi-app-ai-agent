@@ -38,3 +38,38 @@ describe("orchestrator (demo mode, no live credentials required)", () => {
     ).rejects.toThrow(/Unknown planId/);
   });
 });
+
+describe("approval with edited essentials", () => {
+  it("keeps the approved cart fixed across retries", async () => {
+    const plan = await generatePlan({ ...demoPlanRequest, demoMode: true });
+    const order = plan.proposedActions.find(a => a.integration === 'zinc')!;
+    const removed = plan.essentials[0]!.productId;
+    const request = { planId: plan.planId, approvedActionIds: [order.actionId], excludedEssentialIds: [removed] };
+    const first = await executeApprovedActions(request);
+    const repeated = await executeApprovedActions(request);
+    expect(first.results[0]?.externalId).toBe(repeated.results[0]?.externalId);
+    await expect(executeApprovedActions({ ...request, excludedEssentialIds: [] })).rejects.toThrow(/different cart/);
+  });
+
+  it("rejects an empty cart and unknown item IDs before executing", async () => {
+    const plan = await generatePlan({ ...demoPlanRequest, demoMode: true });
+    const order = plan.proposedActions.find(a => a.integration === 'zinc')!;
+    await expect(executeApprovedActions({ planId: plan.planId, approvedActionIds: [order.actionId], excludedEssentialIds: plan.essentials.map(i => i.productId) })).rejects.toThrow(/at least one essential/);
+    await expect(executeApprovedActions({ planId: plan.planId, approvedActionIds: [order.actionId], excludedEssentialIds: ['unknown'] })).rejects.toThrow(/Unknown essential/);
+  });
+
+  it("blocks an over-budget order without blocking approved calendar events", async () => {
+    const plan = await generatePlan({ ...demoPlanRequest, budget: 0, demoMode: true });
+    const order = plan.proposedActions.find(a => a.integration === 'zinc')!;
+    const event = plan.proposedActions.find(a => a.integration === 'google-calendar')!;
+    await expect(executeApprovedActions({ planId: plan.planId, approvedActionIds: [order.actionId] })).rejects.toThrow(/exceed your budget/);
+    const result = await executeApprovedActions({ planId: plan.planId, approvedActionIds: [event.actionId] });
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0]?.integration).toBe('google-calendar');
+  });
+
+  it("rejects action IDs that do not belong to the plan", async () => {
+    const plan = await generatePlan({ ...demoPlanRequest, demoMode: true });
+    await expect(executeApprovedActions({ planId: plan.planId, approvedActionIds: ['unknown'] })).rejects.toThrow(/Unknown approved action/);
+  });
+});

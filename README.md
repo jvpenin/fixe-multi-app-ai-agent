@@ -132,3 +132,21 @@ Backend scaffold: schemas, ranking, orchestrator, reliability utilities, and
 all three integration adapters are implemented and typecheck/build/test
 clean in demo mode. Live-credential paths are untested pending real API
 keys. Frontend not started.
+
+### Frontend experience
+
+The homepage now includes Landy (an animated, gradient-shaded SVG flying companion), a floating neighborhood scene, and a short product introduction. Start a landing to enter destination → connections → preferences → review, then generate a typed plan through `POST /api/plan`. The workspace includes three day tabs, Google Maps links and an embedded destination map, editable essentials, action selection, approval, individual execution results, and API traces. Layouts adapt to mobile and respect reduced-motion preferences.
+
+For a credential-free walkthrough, select **Explore a sample landing** in the homepage footer or **Try the sample landing** during onboarding. This deliberately uses the existing Boston fixtures. Sample data and simulated execution remain labeled throughout.
+
+Additional read-only endpoints:
+
+- `GET /api/places?q=…` and `?id=…`: server-side Google Places autocomplete/details; secrets stay on the server.
+- `POST /api/preferences`: enriches 3–5 shared places and returns editable category/affordability suggestions.
+- `POST /api/connections`: verifies the existing server-configured Google Maps, Google Calendar, or Zinc sandbox connection. Calendar setup still uses `npm run oauth:google`; there is no new per-user browser OAuth flow.
+
+Selecting a destination passes its place ID to the planner, which resolves its coordinates, biases searches around that location, and calculates straight-line distances. These are not walking-time estimates. Device-local arrival times are converted to UTC; the interface labels this explicitly.
+
+`POST /api/execute` also accepts optional `excludedEssentialIds`. The server validates the edited cart and budget, locks the order contents on first approval, and preserves the same idempotency key on retries. The process-local plan and idempotency stores are shared across Next.js route bundles; they remain non-durable and require a single server process.
+
+Current backend limits remain visible in the UI: the scheduler proposes a grocery trip and one meal, leaving other days open; Zinc submits the existing sandbox test product rather than a real multi-item delivery and may return pending. Pending is never displayed as confirmed. Planner traces currently arrive with the completed plan response, not as a live stream. No external writes were used for frontend browser validation.

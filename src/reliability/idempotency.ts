@@ -45,4 +45,5 @@ class IdempotencyStore {
 }
 
 /** Process-wide singleton — Next.js API routes share this module instance. */
-export const idempotencyStore = new IdempotencyStore();
+const processState = globalThis as typeof globalThis & { landingIdempotency?: IdempotencyStore };
+export const idempotencyStore = processState.landingIdempotency ??= new IdempotencyStore();

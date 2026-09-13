@@ -47,7 +47,10 @@ export const demoPlanRequest: PlanRequest = PlanRequestSchema.parse(demoProfileF
  * per CLAUDE.md — this is process-local and resets on restart, which is
  * fine for a single-process hackathon demo.
  */
-const planStore = new Map<string, { plan: LandingPlan; demoMode: boolean }>();
+type StoredPlan = { plan: LandingPlan; demoMode: boolean; approvedCart?: string };
+// Share the process-local store across Next.js route bundles and development reloads.
+const processState = globalThis as typeof globalThis & { landingPlans?: Map<string, StoredPlan> };
+const planStore = processState.landingPlans ??= new Map<string, StoredPlan>();
 
 function isDemoMode(request: PlanRequest): boolean {
   if (request.demoMode !== undefined) return request.demoMode;
@@ -150,6 +153,12 @@ async function loadPlaces(
   if (demoMode) return placesFixture as NormalizedPlace[];
 
   try {
+    const destination = request.destinationPlaceId
+      ? await traced(tracer, { tool: "google-maps", operation: "destinationDetails", attempt: 1 },
+          (place: NormalizedPlace) => place.placeId,
+          () => googleMaps.placeDetails(request.destinationPlaceId!, AbortSignal.timeout(8000)))
+      : undefined;
+    const center = destination?.location;
     const [restaurants, groceries] = await Promise.all([
       withRetry(
         () =>
@@ -157,7 +166,7 @@ async function loadPlaces(
             tracer,
             { tool: "google-maps", operation: "textSearch:restaurants", attempt: 1 },
             (r: NormalizedPlace[]) => r[0]?.placeId,
-            () => googleMaps.textSearch(`restaurants near ${request.approximateAddress}`),
+            () => googleMaps.textSearch(`restaurants near ${request.approximateAddress}`, center),
           ),
         { operation: "google-maps.textSearch:restaurants" },
       ),
@@ -167,12 +176,15 @@ async function loadPlaces(
             tracer,
             { tool: "google-maps", operation: "textSearch:groceries", attempt: 1 },
             (r: NormalizedPlace[]) => r[0]?.placeId,
-            () => googleMaps.textSearch(`grocery stores near ${request.approximateAddress}`),
+            () => googleMaps.textSearch(`grocery stores near ${request.approximateAddress}`, center),
           ),
         { operation: "google-maps.textSearch:groceries" },
       ),
     ]);
-    const combined = [...restaurants, ...groceries];
+    const combined = [...new Map([...restaurants, ...groceries].map(place => [place.placeId, {
+      ...place,
+      ...(center ? { distanceMeters: googleMaps.distanceMeters(center, place.location) } : {}),
+    }])).values()];
     if (combined.length === 0) {
       warnings.push("Google Places returned no results in the initial search.");
     }
@@ -322,11 +334,34 @@ export async function executeApprovedActions(request: ExecuteRequest): Promise<E
     throw new Error(`Unknown planId: ${request.planId}`);
   }
   const { plan, demoMode } = entry;
+  if (request.approvedActionIds.some(id => !plan.proposedActions.some(a => a.actionId === id))) {
+    throw new Error("Unknown approved action ID");
+  }
+  const excluded = [...new Set(request.excludedEssentialIds ?? [])].sort();
+  if (excluded.some(id => !plan.essentials.some(item => item.productId === id))) {
+    throw new Error("Unknown essential item");
+  }
+  const cartKey = JSON.stringify(excluded);
+  const includesOrder = plan.proposedActions.some(a => a.integration === "zinc" && request.approvedActionIds.includes(a.actionId));
+  if (includesOrder) {
+    if (entry.approvedCart !== undefined && entry.approvedCart !== cartKey) {
+      throw new Error("This order was already approved with a different cart. Build a new plan to change it.");
+    }
+    const items = plan.essentials.filter(item => item.available && !excluded.includes(item.productId));
+    if (!items.length) throw new Error("Select at least one essential or deselect the Zinc order.");
+    if (items.reduce((sum, item) => sum + item.priceCents * item.quantity, 0) > Math.round(plan.profile.budget * 100)) {
+      throw new Error("The approved essentials exceed your budget.");
+    }
+    entry.approvedCart = cartKey;
+  }
 
   const tracer = new Tracer();
   const approvedActions = plan.proposedActions.filter((action) =>
     request.approvedActionIds.includes(action.actionId),
-  );
+  ).map(action => action.integration !== "zinc" ? action : {
+    ...action,
+    payload: { ...action.payload, items: (action.payload.items as { productId: string }[]).filter(item => !excluded.includes(item.productId)) },
+  });
 
   const results = await Promise.all(
     approvedActions.map((action) => executeOneAction(action, tracer, demoMode)),

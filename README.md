@@ -59,10 +59,9 @@ Each integration reads its own env vars (see `.env.example`) and throws a
 clear error if they're missing — nothing else needs to change to go from
 demo mode to live:
 
-- **Google Maps / Calendar dev**: fill `GOOGLE_MAPS_API_KEY` and the
-  `GOOGLE_OAUTH_*` vars, set `DEMO_MODE=false`, and call `/api/plan`. Places
-  results have no `distanceMeters` yet (no geocoding step wired in — see the
-  `TODO(maps)` in `google-maps.ts`).
+- **Google Maps / Calendar dev**: fill `GOOGLE_MAPS_API_KEY` (restricted to
+  Places API (New), Maps JavaScript API, and Routes API) and the
+  `GOOGLE_OAUTH_*` vars, set `DEMO_MODE=false`, and call `/api/plan`.
 - **Zinc dev**: fill `ZINC_API_KEY` with a `zn_test_...` sandbox key. Use the
   documented sandbox product URLs in `zinc.ts` (`test-success`,
   `test-out-of-stock`, `test-price-exceeded`) while testing order creation —
@@ -103,6 +102,19 @@ npm run oauth:google
 It prints a Google consent URL, you approve access, paste back the `code`
 from the redirected (broken, that's expected) URL, and it prints the
 refresh token to add to `.env.local`.
+
+`npm run fetch:essentials -- --address "..."` (or `--lat`/`--lng`) is a
+standalone CLI that calls the live Places + Routes APIs directly and prints
+restaurants/groceries/pharmacies/parks ranked with the same `ranking.ts`
+engine the app uses — handy for sanity-checking the Maps adapter without
+going through `/api/plan`.
+
+`scripts/personal-data/` holds separate, personal-use utilities (a local
+OAuth installed-app flow against your own Calendar, and a Google Takeout
+`Reviews.json` parser) used to build a sample dataset for demo mode per
+CLAUDE.md's consent-based onboarding — they are **not** part of the
+production integration in `src/integrations/`, write local `credentials.json`
+/ `token.json` files (gitignored), and are run with `npm run personal:calendar`.
 
 **3. Full MVP against the three live APIs**
 

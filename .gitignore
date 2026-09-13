@@ -24,3 +24,8 @@ npm-debug.log*
 coverage/
 dist/
 *.tsbuildinfo
+
+# personal-data scripts: local secrets and personal exports — never commit
+credentials.json
+token.json
+Reviews.json

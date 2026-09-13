@@ -61,3 +61,36 @@ describe("rankPlaces", () => {
     expect(ranked[0]!.score).toBeGreaterThan(ranked[1]!.score);
   });
 });
+
+describe("ratingScore (review-count-aware)", () => {
+  it("falls back to the raw rating when userRatingCount is unknown", () => {
+    // fullPlace has rating: 5 and no userRatingCount — matches today's
+    // behavior exactly, so a perfect score is still achievable.
+    const { score, missingSignals } = scorePlace(fullPlace, profile);
+    expect(missingSignals).toEqual([]);
+    expect(score).toBeCloseTo(1, 4);
+  });
+
+  it("shrinks a high rating backed by few reviews toward the prior mean", () => {
+    const fewReviews: NormalizedPlace = { ...fullPlace, rating: 5, userRatingCount: 2 };
+    const manyReviews: NormalizedPlace = { ...fullPlace, rating: 4.6, userRatingCount: 1000 };
+
+    const fewScore = scorePlace(fewReviews, profile).score;
+    const manyScore = scorePlace(manyReviews, profile).score;
+
+    // Without shrinkage, 5.0 > 4.6 would always win on the rating signal
+    // alone. With the Bayesian prior, the well-reviewed 4.6★ place should
+    // come out ahead once its rating signal is trusted at near-face-value
+    // while the 2-review 5★ place gets pulled toward the 4.0 prior.
+    expect(manyScore).toBeGreaterThan(fewScore);
+  });
+
+  it("treats userRatingCount: 0 as no evidence, pulling the score toward the prior", () => {
+    const untested: NormalizedPlace = { ...fullPlace, rating: 5, userRatingCount: 0 };
+    const { scoreBreakdown } = scorePlace(untested, profile);
+    // rating contribution should be well below the max possible (weight 0.15
+    // redistributed among 5 available signals here, i.e. still 0.15 since
+    // all signals are present) — 5/5 would give 0.15 exactly.
+    expect(scoreBreakdown.rating).toBeLessThan(0.15);
+  });
+});

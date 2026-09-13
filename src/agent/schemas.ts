@@ -33,7 +33,7 @@ export type UserPreferenceProfile = z.infer<typeof UserPreferenceProfileSchema>;
 // Places (Google Maps)
 // ---------------------------------------------------------------------------
 
-export const PlaceCategorySchema = z.enum(["restaurant", "grocery", "other"]);
+export const PlaceCategorySchema = z.enum(["restaurant", "grocery", "pharmacy", "park", "other"]);
 export type PlaceCategory = z.infer<typeof PlaceCategorySchema>;
 
 /** A place as normalized from Places API (New), before ranking is applied. */
@@ -45,9 +45,11 @@ export const NormalizedPlaceSchema = z.object({
   addressFields: AddressFieldsSchema.optional(),
   location: z.object({ lat: z.number(), lng: z.number() }),
   rating: z.number().min(0).max(5).optional(),
+  userRatingCount: z.number().int().nonnegative().optional(),
   priceLevel: z.number().int().min(0).max(4).optional(),
   openNow: z.boolean().optional(),
   distanceMeters: z.number().nonnegative().optional(),
+  transitDurationMinutes: z.number().nonnegative().optional(),
 });
 export type NormalizedPlace = z.infer<typeof NormalizedPlaceSchema>;
 

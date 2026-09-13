@@ -24,6 +24,18 @@ type SignalKey = keyof typeof BASE_WEIGHTS;
 const MAX_DISTANCE_METERS = 3000; // beyond this, distance score floors at 0
 const PRICE_LEVEL_MAX = 4; // Places API New: 0 (free) .. 4 (very expensive)
 
+// Bayesian prior for the rating signal: shrinks a rating backed by few
+// reviews toward a typical Google Places average, so e.g. a 5★/3-review
+// place doesn't outrank a 4.6★/500-review place. Only applied when
+// `userRatingCount` is present — with no count data we can't judge
+// confidence, so we fall back to the raw rating instead of penalizing it.
+const RATING_PRIOR_MEAN = 4.0;
+const RATING_PRIOR_WEIGHT = 10; // pseudo-review-count given to the prior
+
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
 function preferenceMatchScore(
   place: NormalizedPlace,
   profile: UserPreferenceProfile,
@@ -55,7 +67,13 @@ function distanceScore(place: NormalizedPlace): number | undefined {
 
 function ratingScore(place: NormalizedPlace): number | undefined {
   if (place.rating === undefined) return undefined;
-  return Math.max(0, Math.min(1, place.rating / 5));
+  if (place.userRatingCount === undefined) {
+    return clamp01(place.rating / 5);
+  }
+  const weightedRating =
+    (RATING_PRIOR_WEIGHT * RATING_PRIOR_MEAN + place.userRatingCount * place.rating) /
+    (RATING_PRIOR_WEIGHT + place.userRatingCount);
+  return clamp01(weightedRating / 5);
 }
 
 function openAtProposedTimeScore(place: NormalizedPlace): number | undefined {

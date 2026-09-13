@@ -14,10 +14,13 @@
     "oauth:google": "tsx scripts/google-oauth-setup.ts",
     "check:maps": "tsx scripts/test-google-maps.ts",
     "check:calendar": "tsx scripts/test-google-calendar.ts",
-    "check:zinc": "tsx scripts/test-zinc.ts"
+    "check:zinc": "tsx scripts/test-zinc.ts",
+    "fetch:essentials": "tsx scripts/fetch-essentials.ts",
+    "personal:calendar": "tsx scripts/personal-data/run-example.ts"
   },
   "dependencies": {
     "framer-motion": "^13.2.0",
+    "google-auth-library": "^9.15.1",
     "googleapis": "^144.0.0",
     "next": "^14.2.5",
     "react": "^18.3.1",

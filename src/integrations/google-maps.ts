@@ -20,6 +20,7 @@ const SEARCH_FIELD_MASK = [
   "places.formattedAddress",
   "places.location",
   "places.rating",
+  "places.userRatingCount",
   "places.priceLevel",
   "places.currentOpeningHours.openNow",
   "places.primaryType",
@@ -55,6 +56,12 @@ function inferCategory(types: string[] | undefined, primaryType: string | undefi
   if (all.some((t) => t === "grocery_store" || t === "supermarket" || t === "convenience_store")) {
     return "grocery";
   }
+  if (all.some((t) => t === "pharmacy" || t === "drugstore")) {
+    return "pharmacy";
+  }
+  if (all.some((t) => t === "park" || t === "national_park" || t === "dog_park" || t === "state_park")) {
+    return "park";
+  }
   return "other";
 }
 
@@ -69,6 +76,7 @@ type RawPlace = {
   addressComponents?: AddressComponent[];
   location?: { latitude?: number; longitude?: number };
   rating?: number;
+  userRatingCount?: number;
   priceLevel?: string;
   currentOpeningHours?: { openNow?: boolean };
   primaryType?: string;
@@ -87,6 +95,7 @@ function normalize(raw: RawPlace): NormalizedPlace {
       lng: raw.location?.longitude ?? 0,
     },
     rating: raw.rating,
+    userRatingCount: raw.userRatingCount,
     priceLevel: priceLevelToNumber(raw.priceLevel),
     openNow: raw.currentOpeningHours?.openNow,
   };
@@ -121,9 +130,10 @@ export async function textSearch(
   radiusMeters = 2000,
   signal?: AbortSignal,
 ): Promise<NormalizedPlace[]> {
-  // TODO(maps): once geocoding is wired in, always pass `center` so
-  // `distanceMeters` can be computed (see orchestrator.ts) — the distance
-  // ranking signal is skipped (weight redistributed) without it.
+  // `center` is resolved by the orchestrator from `destinationPlaceId` /
+  // `destinationAddress` before this is called for recommendations, so
+  // `distanceMeters` is populated in that path. Only a bare address-only
+  // resolution call (no destination yet) omits it.
   const raw = await postSearch(
     "searchText",
     {
@@ -192,6 +202,7 @@ const DETAILS_FIELD_MASK = [
   "addressComponents",
   "location",
   "rating",
+  "userRatingCount",
   "priceLevel",
   "currentOpeningHours.openNow",
   "primaryType",
@@ -244,4 +255,107 @@ export async function autocomplete(
     .map((s) => s.placePrediction)
     .filter((p): p is { placeId: string; text?: { text?: string } } => !!p?.placeId)
     .map((p) => ({ placeId: p.placeId, text: p.text?.text ?? "" }));
+}
+
+const ROUTES_BASE_URL = "https://routes.googleapis.com";
+
+/**
+ * Calls Routes API's computeRouteMatrix to get public-transit travel time
+ * from a single origin to many destinations in one request (cheaper and
+ * faster than calling computeRoutes once per destination).
+ * Docs: https://developers.google.com/maps/documentation/routes/compute_route_matrix
+ *
+ * Returns an array the same length and order as `destinations`, with
+ * `undefined` for any destination transit can't reach (no route found).
+ */
+async function computeTransitDurationsMinutes(
+  origin: { lat: number; lng: number },
+  destinations: { lat: number; lng: number }[],
+  signal?: AbortSignal,
+): Promise<(number | undefined)[]> {
+  if (destinations.length === 0) return [];
+
+  const response = await fetch(`${ROUTES_BASE_URL}/distanceMatrix/v2:computeRouteMatrix`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": apiKey(),
+      "X-Goog-FieldMask": "originIndex,destinationIndex,duration,condition",
+    },
+    body: JSON.stringify({
+      origins: [
+        { waypoint: { location: { latLng: { latitude: origin.lat, longitude: origin.lng } } } },
+      ],
+      destinations: destinations.map((d) => ({
+        waypoint: { location: { latLng: { latitude: d.lat, longitude: d.lng } } },
+      })),
+      travelMode: "TRANSIT",
+    }),
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(`computeRouteMatrix (transit) failed: ${response.status} ${await response.text()}`);
+  }
+
+  type MatrixElement = {
+    destinationIndex: number;
+    duration?: string;
+    condition?: string;
+  };
+  const elements = (await response.json()) as MatrixElement[];
+
+  const durations = new Array<number | undefined>(destinations.length).fill(undefined);
+  for (const el of elements) {
+    if (el.condition === "ROUTE_EXISTS" && el.duration) {
+      const seconds = parseInt(el.duration.replace("s", ""), 10);
+      if (!Number.isNaN(seconds)) {
+        durations[el.destinationIndex] = Math.round(seconds / 60);
+      }
+    }
+  }
+  return durations;
+}
+
+/**
+ * Fetches restaurants, groceries, pharmacies, and parks near `origin`, then
+ * attaches each place's public-transit travel time from `origin` (in
+ * minutes). Rating and price level are already included on every place —
+ * they come from the Places API search itself (see normalize() above), no
+ * extra call needed.
+ */
+export async function fetchNearbyEssentials(
+  origin: { lat: number; lng: number },
+  radiusMeters = 2000,
+  signal?: AbortSignal,
+): Promise<{
+  restaurants: NormalizedPlace[];
+  groceries: NormalizedPlace[];
+  pharmacies: NormalizedPlace[];
+  parks: NormalizedPlace[];
+}> {
+  const [restaurants, groceries, pharmacies, parks] = await Promise.all([
+    nearbySearch(["restaurant"], origin, radiusMeters, signal),
+    nearbySearch(["grocery_store", "supermarket"], origin, radiusMeters, signal),
+    nearbySearch(["pharmacy"], origin, radiusMeters, signal),
+    nearbySearch(["park"], origin, radiusMeters, signal),
+  ]);
+
+  const all = [...restaurants, ...groceries, ...pharmacies, ...parks];
+  const durations = await computeTransitDurationsMinutes(
+    origin,
+    all.map((p) => p.location),
+    signal,
+  );
+
+  let i = 0;
+  const withTransit = <T extends NormalizedPlace>(list: T[]): T[] =>
+    list.map((place) => ({ ...place, transitDurationMinutes: durations[i++] }));
+
+  return {
+    restaurants: withTransit(restaurants),
+    groceries: withTransit(groceries),
+    pharmacies: withTransit(pharmacies),
+    parks: withTransit(parks),
+  };
 }

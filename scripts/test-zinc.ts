@@ -8,7 +8,7 @@ const SANDBOX_SHIPPING_ADDRESS = {
   city: "Boston",
   state: "MA",
   postalCode: "02215",
-  phoneNumber: "+15555550123",
+  phoneNumber: "+16175550123",
 };
 
 /**

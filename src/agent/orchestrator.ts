@@ -33,7 +33,7 @@ const DEMO_SHIPPING_ADDRESS: zinc.ShippingAddress = {
   city: "Boston",
   state: "MA",
   postalCode: "02215",
-  phoneNumber: "+15555550123",
+  phoneNumber: "+16175550123",
   country: "US",
 };
 const DEMO_CUSTOMER_EMAIL = "demo@example.com";
@@ -437,7 +437,7 @@ async function executeZincAction(action: ProposedAction, tracer: Tracer): Promis
               maxPriceCents: Math.max(maxPriceCents, 1),
               shippingAddress: DEMO_SHIPPING_ADDRESS,
               customerEmail: DEMO_CUSTOMER_EMAIL,
-              idempotencyKey: action.operationId,
+              idempotencyKey: zinc.toIdempotencyKey(action.operationId),
             }),
         ),
       { operation: "zinc.createOrder" },

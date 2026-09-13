@@ -1,6 +1,8 @@
 /**
  * Zinc API v2 adapter (sandbox only for this MVP — see .env.example).
  * Docs: https://www.zinc.com/docs/v2/api-reference
+ * Base URL is https://api.zinc.com — the "v2" is a docs/reference label,
+ * not a URL path segment.
  *
  * Auth: `Authorization: Bearer <ZINC_API_KEY>`. A key with the `zn_test_`
  * prefix runs against the sandbox — no real purchase is ever made.
@@ -12,6 +14,8 @@
  *   price exceeded -> https://zinc.com/shop/products/test-price-exceeded
  *   invalid address -> https://zinc.com/shop/products/test-invalid-address
  */
+
+import { createHash } from "node:crypto";
 
 export type SearchResult = {
   productId: string;
@@ -55,8 +59,18 @@ export type OrderStatus = {
   totalCents?: number;
 };
 
+/**
+ * Zinc caps `idempotency_key` at 36 characters. Landing's `operationId`s
+ * (e.g. `${planId}-zinc-order`) usually run longer, so shorten deterministically
+ * — same operationId always maps to the same key, preserving RNF04.
+ */
+export function toIdempotencyKey(operationId: string): string {
+  if (operationId.length <= 36) return operationId;
+  return createHash("sha256").update(operationId).digest("hex").slice(0, 36);
+}
+
 function baseUrl(): string {
-  return process.env.ZINC_API_BASE_URL ?? "https://api.zinc.com/v2";
+  return process.env.ZINC_API_BASE_URL ?? "https://api.zinc.com";
 }
 
 function authHeaders(): Record<string, string> {
@@ -80,15 +94,22 @@ export async function search(
     throw new Error(`zinc search failed: ${response.status} ${await response.text()}`);
   }
   const data = (await response.json()) as {
-    results?: { product_id: string; title: string; price: number; available: boolean; image?: string }[];
+    results?: { product_id: string; title: string; price: number | null; image?: string }[];
   };
-  return (data.results ?? []).map((r) => ({
-    productId: r.product_id,
-    title: r.title,
-    priceCents: r.price,
-    available: r.available,
-    imageUrl: r.image,
-  }));
+  // The search endpoint doesn't return an availability flag — it only lists
+  // results it found. Availability is only confirmed by the order itself
+  // (out-of-stock surfaces later as an order status, see getOrder below).
+  // Some results come back with price: null (retailer didn't report one);
+  // drop those rather than let a null cost corrupt budget totals downstream.
+  return (data.results ?? [])
+    .filter((r): r is typeof r & { price: number } => r.price != null)
+    .map((r) => ({
+      productId: r.product_id,
+      title: r.title,
+      priceCents: r.price,
+      available: true,
+      imageUrl: r.image,
+    }));
 }
 
 /**

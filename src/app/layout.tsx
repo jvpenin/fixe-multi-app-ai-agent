@@ -2,8 +2,8 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata = {
-  title: "Landing — A softer start in a new city",
-  description: "AI relocation agent for the first 72 hours in a new city.",
+  title: "Land.ai — New city. Make it yours.",
+  description: "Moving for a new semester, a new job, or a fresh start? Land.ai plans your first 72 hours around your address, taste, and budget.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

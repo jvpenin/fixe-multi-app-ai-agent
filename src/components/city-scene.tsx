@@ -49,7 +49,7 @@ export function Landy({ className = "" }: { className?: string }) {
           d="M27 73Q18 66 33 62L186 22Q201 18 192 32L124 137Q119 145 114 131L98 91Z"
           fill="url(#wing)"
         />
-        <path d="M98 91L190 25L117 110L114 131Z" fill="#183c36" />
+        <path d="M98 91L190 25L117 110L114 131Z" fill="#173cc7" />
         <path
           d="M55 77Q46 69 61 64L178 30Q192 26 183 38L118 111Q105 125 100 109L94 89Z"
           fill="url(#body)"
@@ -60,7 +60,7 @@ export function Landy({ className = "" }: { className?: string }) {
           rx="3.2"
           ry="5"
           transform="rotate(35 123 79)"
-          fill="#19352f"
+          fill="#1c327c"
         />
         <ellipse
           cx="136"
@@ -68,7 +68,7 @@ export function Landy({ className = "" }: { className?: string }) {
           rx="3.2"
           ry="5"
           transform="rotate(35 136 69)"
-          fill="#19352f"
+          fill="#1c327c"
         />
       </g>
     </svg>

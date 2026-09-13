@@ -145,7 +145,7 @@ Additional read-only endpoints:
 - `POST /api/preferences`: enriches 3–5 shared places and returns editable category/affordability suggestions.
 - `POST /api/connections`: verifies the existing server-configured Google Maps, Google Calendar, or Zinc sandbox connection. Calendar setup still uses `npm run oauth:google`; there is no new per-user browser OAuth flow.
 
-Selecting a destination passes its place ID to the planner, which resolves its coordinates, biases searches around that location, and calculates straight-line distances. These are not walking-time estimates. Device-local arrival times are converted to UTC; the interface labels this explicitly.
+Destination onboarding collects street, number, optional unit, city, optional state/province, country, and postal code. Google Places details autofill these fields; missing values must be completed before continuing. The optional structured `destinationAddress` is validated server-side and becomes the canonical planning address. An unchanged autocomplete selection passes its place ID; manual address edits clear that ID and resolve the full address again before searching nearby. The planner biases searches around the resolved coordinates and calculates straight-line distances. These are not walking-time estimates. Device-local arrival times are converted to UTC; the interface labels this explicitly.
 
 `POST /api/execute` also accepts optional `excludedEssentialIds`. The server validates the edited cart and budget, locks the order contents on first approval, and preserves the same idempotency key on retries. The process-local plan and idempotency stores are shared across Next.js route bundles; they remain non-durable and require a single server process.
 

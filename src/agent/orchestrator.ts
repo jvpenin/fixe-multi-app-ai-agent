@@ -1,3 +1,4 @@
+import { formatAddress } from "@/agent/address";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -62,6 +63,9 @@ function isDemoMode(request: PlanRequest): boolean {
 // ---------------------------------------------------------------------------
 
 export async function generatePlan(request: PlanRequest): Promise<LandingPlan> {
+  if (request.destinationAddress) {
+    request = { ...request, approximateAddress: formatAddress(request.destinationAddress), destination: [request.destinationAddress.city, request.destinationAddress.state, request.destinationAddress.country].filter(Boolean).join(", ") };
+  }
   const tracer = new Tracer();
   const warnings: string[] = [];
   const demoMode = isDemoMode(request);
@@ -157,7 +161,11 @@ async function loadPlaces(
       ? await traced(tracer, { tool: "google-maps", operation: "destinationDetails", attempt: 1 },
           (place: NormalizedPlace) => place.placeId,
           () => googleMaps.placeDetails(request.destinationPlaceId!, AbortSignal.timeout(8000)))
-      : undefined;
+      : request.destinationAddress
+        ? (await traced(tracer, { tool: "google-maps", operation: "resolveAddress", attempt: 1 },
+            (places: NormalizedPlace[]) => places[0]?.placeId,
+            () => googleMaps.textSearch(request.approximateAddress, undefined, 2000, AbortSignal.timeout(8000))))[0]
+        : undefined;
     const center = destination?.location;
     const [restaurants, groceries] = await Promise.all([
       withRetry(

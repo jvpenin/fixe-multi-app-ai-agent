@@ -1,3 +1,4 @@
+import { addressFromGoogle, type AddressComponent } from "@/agent/address";
 import { NormalizedPlaceSchema, type NormalizedPlace, type PlaceCategory } from "@/agent/schemas";
 
 /**
@@ -65,6 +66,7 @@ type RawPlace = {
   id: string;
   displayName?: { text?: string };
   formattedAddress?: string;
+  addressComponents?: AddressComponent[];
   location?: { latitude?: number; longitude?: number };
   rating?: number;
   priceLevel?: string;
@@ -79,6 +81,7 @@ function normalize(raw: RawPlace): NormalizedPlace {
     name: raw.displayName?.text ?? "Unknown place",
     category: inferCategory(raw.types, raw.primaryType),
     address: raw.formattedAddress,
+    addressFields: raw.addressComponents ? addressFromGoogle(raw.addressComponents) : undefined,
     location: {
       lat: raw.location?.latitude ?? 0,
       lng: raw.location?.longitude ?? 0,
@@ -186,6 +189,7 @@ const DETAILS_FIELD_MASK = [
   "id",
   "displayName",
   "formattedAddress",
+  "addressComponents",
   "location",
   "rating",
   "priceLevel",

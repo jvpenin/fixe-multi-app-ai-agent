@@ -2,7 +2,19 @@
 
 import { useRef, useState } from "react";
 import { AnimatePresence, motion, MotionConfig } from "framer-motion";
-import { CityScene, Landy } from "@/components/city-scene";
+import { AppIcon } from "@/components/app-icon";
+import { DestinationAddress } from "@/components/destination-address";
+import {
+  emptyAddress,
+  CompleteAddressSchema,
+  formatAddress,
+  type AddressFields,
+} from "@/agent/address";
+import { Brand } from "@/components/brand";
+import { Icon } from "@/components/ui-icon";
+import { Marketing, type Persona } from "@/components/marketing";
+import { JourneyCard } from "@/components/journey-card";
+import { Landy } from "@/components/city-scene";
 import { PlaceInput, type PlaceChoice } from "@/components/place-input";
 import {
   LandingPlanSchema,
@@ -53,24 +65,6 @@ const money = (amount: number) =>
     amount,
   );
 const firstName = (name: string) => name.trim().split(" ")[0] || "friend";
-function Brand({ onClick }: { onClick: () => void }) {
-  return (
-    <button className="brand" onClick={onClick} aria-label="Landing home">
-      <svg viewBox="0 0 32 32" fill="none">
-        <path d="M4 14L28 4L18 28L14 18L4 14Z" fill="currentColor" />
-        <path d="M14 18L28 4" stroke="#f8f8ef" strokeWidth="1.5" />
-      </svg>
-      landing<span>®</span>
-    </button>
-  );
-}
-function AppIcon({ id }: { id: string }) {
-  return (
-    <span className={`app-icon ${id}`}>
-      {apps.find((a) => a.id === id)?.icon}
-    </span>
-  );
-}
 function Trace({ entries }: { entries: ToolTraceEntry[] }) {
   return (
     <details className="trace">
@@ -104,6 +98,9 @@ export default function Home() {
   const [name, setName] = useState("");
   const [city, setCity] = useState("San Francisco, CA");
   const [address, setAddress] = useState("");
+  const [addressFields, setAddressFields] = useState<AddressFields>({
+    ...emptyAddress,
+  });
   const [destinationPlace, setDestinationPlace] = useState<PlaceChoice | null>(
     null,
   );
@@ -132,13 +129,37 @@ export default function Home() {
   const [results, setResults] = useState<ActionResult[]>([]);
   const [executionTrace, setExecutionTrace] = useState<ToolTraceEntry[]>([]);
   const [executing, setExecuting] = useState(false);
-  const [tab, setTab] = useState("My Landing");
+  const [tab, setTab] = useState("My plan");
   const [day, setDay] = useState(0);
   const busy = useRef(false);
   const start = () => {
     setScreen("onboarding");
     setError("");
     window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const startForPersona = (persona: Persona) => {
+    setDemo(false);
+    setStep(0);
+    setError("");
+    setCity("");
+    setAddress("");
+    setAddressFields({ ...emptyAddress });
+    setDestinationPlace(null);
+    setName("");
+    setFavorites([]);
+    setLearnedPreferences([]);
+    setPreferenceNote("");
+    setBudget(
+      persona === "professional" ? 250 : persona === "explorer" ? 200 : 150,
+    );
+    setSelectedInterests(
+      persona === "professional"
+        ? ["Coffee", "Food", "Fitness"]
+        : persona === "explorer"
+          ? ["Culture", "Outdoors", "Food"]
+          : ["Coffee", "Food", "Outdoors"],
+    );
+    start();
   };
   const useDemo = () => {
     setDemo(true);
@@ -220,6 +241,7 @@ export default function Home() {
         body: JSON.stringify({
           destination: city,
           approximateAddress: address,
+          destinationAddress: demo ? undefined : addressFields,
           destinationPlaceId: destinationPlace?.placeId,
           arrivalAt: new Date(arrival).toISOString(),
           budget,
@@ -245,7 +267,7 @@ export default function Home() {
       setExecutionTrace([]);
       setExcludedItems([]);
       setSelectedActions(next.proposedActions.map((a) => a.actionId));
-      setTab("My Landing");
+      setTab("My plan");
       setScreen("plan");
     } catch (e) {
       setError(
@@ -375,10 +397,13 @@ export default function Home() {
           />
           {screen === "home" ? (
             <nav>
-              <a href="#how-it-works">How it works</a>
+              <a href="#how-it-works">The first 72 hours</a>
               <a href="#integrations">Integrations</a>
-              <button className="nav-cta" onClick={start}>
-                Start my landing <span>↗</span>
+              <button
+                className="nav-cta"
+                onClick={() => startForPersona("student")}
+              >
+                Plan my arrival <Icon name="arrow" size={17} />
               </button>
             </nav>
           ) : (
@@ -386,7 +411,7 @@ export default function Home() {
               <span className="live-dot" />
               {demo
                 ? "Sample landing · no live writes"
-                : "Your first 72 hours, thoughtfully handled"}
+                : "A new city. A plan that gets you."}
               <button
                 className="text-button"
                 disabled={executing}
@@ -399,140 +424,7 @@ export default function Home() {
         </header>
         <AnimatePresence mode="wait">
           {screen === "home" && (
-            <motion.main
-              key="home"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.4 }}
-            >
-              <section className="hero">
-                <div className="hero-copy">
-                  <div className="eyebrow">
-                    <span /> YOUR AI RELOCATION AGENT
-                  </div>
-                  <h1>
-                    Land somewhere new.
-                    <br />
-                    <span>
-                      We’ll handle
-                      <br />
-                      the landing.
-                    </span>
-                  </h1>
-                  <p>
-                    A new city. A thousand little things.
-                    <br />
-                    Landing gets to know you and takes care of your first
-                    <br className="desktop-break" /> 72 hours. So you can feel
-                    at home, sooner.
-                  </p>
-                  <div className="hero-actions">
-                    <button className="primary" onClick={start}>
-                      Start my landing <span>↗</span>
-                    </button>
-                    <a className="quiet-link" href="#how-it-works">
-                      See how it works <span>↓</span>
-                    </a>
-                  </div>
-                  <div className="hero-integrations">
-                    <span>ONE COMPANION. CONNECTED TO</span>
-                    <div>
-                      {apps.map((a) => (
-                        <span key={a.id}>
-                          <AppIcon id={a.id} />
-                          {a.name}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-                <CityScene />
-                <div className="hero-footnote">
-                  <span>Less figuring it out. More being there.</span>
-                  <span>
-                    MADE FOR YOUR NEXT CHAPTER <span>↘</span>
-                  </span>
-                </div>
-              </section>
-              <section className="how-section" id="how-it-works">
-                <div className="section-heading">
-                  <div>
-                    <div className="eyebrow">
-                      FROM JUST ARRIVED TO RIGHT AT HOME
-                    </div>
-                    <h2>
-                      A little context.
-                      <br />A whole lot handled.
-                    </h2>
-                  </div>
-                  <p>
-                    You bring the next chapter.
-                    <br />
-                    We’ll take care of the first three days.
-                  </p>
-                </div>
-                <div className="steps-grid">
-                  {[
-                    {
-                      n: "01",
-                      icon: "⌖",
-                      title: "Tell us where you’re landing.",
-                      text: "Your destination, your budget, your kind of places. A landing that starts with you.",
-                    },
-                    {
-                      n: "02",
-                      icon: "✧",
-                      title: "Let Landing connect the dots.",
-                      text: "Nearby favorites, a thoughtful schedule and everyday essentials. All in one plan.",
-                    },
-                    {
-                      n: "03",
-                      icon: "✓",
-                      title: "Give it the go-ahead.",
-                      text: "Review your plan. Approve the actions. Get on with feeling at home.",
-                    },
-                  ].map((s) => (
-                    <article key={s.n}>
-                      <div className="step-top">
-                        <span>{s.n}</span>
-                        <span>{s.icon}</span>
-                      </div>
-                      <h3>{s.title}</h3>
-                      <p>{s.text}</p>
-                    </article>
-                  ))}
-                </div>
-              </section>
-              <section className="integration-strip" id="integrations">
-                <div>
-                  <span className="eyebrow">GOOD COMPANY FOR YOUR ARRIVAL</span>
-                  <h2>Your apps. Working together.</h2>
-                  <p>
-                    Places to go. Time to settle. Essentials to get started.
-                  </p>
-                </div>
-                <div className="integration-logos">
-                  {apps.map((a) => (
-                    <div key={a.id}>
-                      <AppIcon id={a.id} />
-                      <span>{a.name}</span>
-                    </div>
-                  ))}
-                </div>
-              </section>
-              <footer>
-                <Brand
-                  onClick={() =>
-                    window.scrollTo({ top: 0, behavior: "smooth" })
-                  }
-                />
-                <span>A new place. A softer landing.</span>
-                <button className="text-button" onClick={useDemo}>
-                  Explore a sample landing ↗
-                </button>
-              </footer>
-            </motion.main>
+            <Marketing key="home" onStart={startForPersona} onDemo={useDemo} />
           )}
           {screen === "onboarding" && (
             <motion.main
@@ -545,8 +437,9 @@ export default function Home() {
               <aside className="onboarding-sidebar">
                 <span className="eyebrow">YOUR NEXT CHAPTER</span>
                 <h2>
-                  A place to start.
-                  <br />A plan to land.
+                  Let’s make
+                  <br />
+                  this your city.
                 </h2>
                 <ol>
                   {[
@@ -609,25 +502,21 @@ export default function Home() {
                       <form
                         onSubmit={(e) => {
                           e.preventDefault();
-                          setStep(1);
+                          if (
+                            demo ||
+                            CompleteAddressSchema.safeParse(addressFields)
+                              .success
+                          )
+                            setStep(1);
                         }}
                       >
-                        <span className="step-symbol">⌖</span>
+                        <span className="step-symbol">
+                          <Icon name="pin" size={26} />
+                        </span>
                         <h2>Where are you landing?</h2>
                         <p className="intro">
                           Every good beginning starts somewhere.
                         </p>
-                        <div className="field">
-                          <label htmlFor="city">Destination city</label>
-                          <input
-                            id="city"
-                            required
-                            readOnly={demo}
-                            value={city}
-                            onChange={(e) => setCity(e.target.value)}
-                            placeholder="San Francisco, CA"
-                          />
-                        </div>
                         {demo ? (
                           <div className="selected-location">
                             ⌖ {address}
@@ -636,22 +525,22 @@ export default function Home() {
                             </small>
                           </div>
                         ) : (
-                          <PlaceInput
-                            label="Where will you be staying?"
-                            value={address}
-                            onChange={(v) => {
-                              setAddress(v);
-                              setDestinationPlace(null);
+                          <DestinationAddress
+                            value={addressFields}
+                            onPlace={setDestinationPlace}
+                            onChange={(next) => {
+                              setAddressFields(next);
+                              setAddress(formatAddress(next));
+                              setCity(
+                                [next.city, next.state, next.country]
+                                  .filter(Boolean)
+                                  .join(", "),
+                              );
                             }}
-                            onSelect={(p) => {
-                              setAddress(p.text);
-                              setDestinationPlace(p);
-                            }}
-                            placeholder="Search your exact destination address"
                           />
                         )}
                         <small className="field-help">
-                          Landing will plan everything around this location.
+                          Land.ai will plan everything around this location.
                         </small>
                         {destinationPlace && (
                           <a
@@ -663,7 +552,9 @@ export default function Home() {
                             ⌖ {address} <span>View map ↗</span>
                           </a>
                         )}
-                        {destinationPlace && (
+                        {(demo ||
+                          CompleteAddressSchema.safeParse(addressFields)
+                            .success) && (
                           <iframe
                             className="destination-preview"
                             title="Your selected destination"
@@ -689,7 +580,9 @@ export default function Home() {
                           className="primary full"
                           disabled={
                             !city.trim() ||
-                            (!destinationPlace && !demo) ||
+                            (!demo &&
+                              !CompleteAddressSchema.safeParse(addressFields)
+                                .success) ||
                             !arrival
                           }
                         >
@@ -699,10 +592,12 @@ export default function Home() {
                     )}
                     {step === 1 && (
                       <>
-                        <span className="step-symbol">↗</span>
-                        <h2>A little help from your apps.</h2>
+                        <span className="step-symbol">
+                          <Icon name="grid" size={26} />
+                        </span>
+                        <h2>Your apps. A new team.</h2>
                         <p className="intro">
-                          Connect the apps Landing will work with.
+                          Connect the apps Land.ai will work with.
                         </p>
                         {integrationCards}
                         <p className="field-help">
@@ -728,8 +623,10 @@ export default function Home() {
                           void learnPreferences();
                         }}
                       >
-                        <span className="step-symbol">✧</span>
-                        <h2>Make yourself known.</h2>
+                        <span className="step-symbol">
+                          <Icon name="user" size={26} />
+                        </span>
+                        <h2>Your city. Your kind of things.</h2>
                         <p className="intro">
                           Your kind of city starts with your kind of things.
                         </p>
@@ -828,7 +725,7 @@ export default function Home() {
                           ))}
                         </div>
                         <PlaceInput
-                          label="Show Landing what you like · 3–5 favorite places"
+                          label="Show Land.ai what you like · 3–5 favorite places"
                           value={favoriteQuery}
                           onChange={setFavoriteQuery}
                           onSelect={(p) => {
@@ -876,11 +773,11 @@ export default function Home() {
                     {step === 3 && (
                       <>
                         <span className="eyebrow">
-                          {firstName(name).toUpperCase()}’S LANDING
+                          {firstName(name).toUpperCase()}’S ARRIVAL PLAN
                         </span>
-                        <h2>Everything we need.</h2>
+                        <h2>This is your starting point.</h2>
                         <p className="intro">
-                          One last look before your new beginning.
+                          Check the details. We’ll connect the rest.
                         </p>
                         <div className="summary-card">
                           <h3>⌖ {city}</h3>
@@ -963,7 +860,7 @@ export default function Home() {
                           {demo && "This run uses recorded Boston fixtures."}
                         </p>
                         <button className="primary full" onClick={buildPlan}>
-                          Build my landing <span>↗</span>
+                          Build my plan <span>↗</span>
                         </button>
                         <button
                           className="text-button back"
@@ -985,12 +882,7 @@ export default function Home() {
                 )}
               </section>
               <aside className="trip-visual">
-                <CityScene compact />
-                <div className="trip-caption">
-                  <span className="eyebrow">NEXT STOP</span>
-                  <h3>{city || "Somewhere new"}</h3>
-                  <p>Your next chapter is taking shape.</p>
-                </div>
+                <JourneyCard city={city} arrival={arrival} step={step} />
               </aside>
             </motion.main>
           )}
@@ -1001,11 +893,13 @@ export default function Home() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
             >
-              <span className="eyebrow">A FEW THOUGHTFUL CONNECTIONS</span>
+              <span className="eyebrow">
+                YOUR FIRST 72 HOURS ARE TAKING SHAPE
+              </span>
               <h2>
-                Landing is planning
+                Connecting your city.
                 <br />
-                your first 72 hours.
+                One good thing at a time.
               </h2>
               <p>Finding your footing, before you even arrive.</p>
               <div className="agent-network">
@@ -1051,9 +945,9 @@ export default function Home() {
               animate={{ opacity: 1 }}
             >
               <aside className="app-sidebar">
-                <span className="eyebrow">MAKE YOURSELF AT HOME</span>
+                <span className="eyebrow">YOUR NEW EVERYDAY</span>
                 <nav>
-                  {["My Landing", "Map", "Essentials", "Integrations"].map(
+                  {["My plan", "Map", "Essentials", "Integrations"].map(
                     (t, i) => (
                       <button
                         key={t}
@@ -1063,7 +957,13 @@ export default function Home() {
                           setScreen("plan");
                         }}
                       >
-                        {["◷", "⌖", "▱", "⊞"][i]} <span>{t}</span>
+                        <Icon
+                          name={
+                            (["calendar", "pin", "bag", "grid"] as const)[i] ??
+                            "grid"
+                          }
+                        />{" "}
+                        <span>{t}</span>
                         {tab === t && "↗"}
                       </button>
                     ),
@@ -1210,7 +1110,7 @@ export default function Home() {
                       className="primary"
                       onClick={() => setScreen("plan")}
                     >
-                      View my landing <span>→</span>
+                      View my plan <span>→</span>
                     </button>
                     <Trace entries={executionTrace} />
                   </div>
@@ -1219,7 +1119,7 @@ export default function Home() {
                     <div className="plan-heading">
                       <div>
                         <span className="eyebrow">
-                          A NEW CITY. ALREADY A LITTLE FAMILIAR.
+                          LESS PLANNING. MORE LIVING.
                         </span>
                         <h2>Your first 72 hours.</h2>
                         <p>

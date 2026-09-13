@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AddressFieldsSchema, CompleteAddressSchema } from "./address";
 
 /**
  * Typed schemas shared by the orchestrator, integration adapters, and API
@@ -41,6 +42,7 @@ export const NormalizedPlaceSchema = z.object({
   name: z.string(),
   category: PlaceCategorySchema,
   address: z.string().optional(),
+  addressFields: AddressFieldsSchema.optional(),
   location: z.object({ lat: z.number(), lng: z.number() }),
   rating: z.number().min(0).max(5).optional(),
   priceLevel: z.number().int().min(0).max(4).optional(),
@@ -136,6 +138,7 @@ export const PlanRequestSchema = z.object({
   destination: z.string().min(1),
   approximateAddress: z.string().min(1),
   destinationPlaceId: z.string().min(1).optional(),
+  destinationAddress: CompleteAddressSchema.optional(),
   arrivalAt: z.string().datetime(),
   budget: z.number().nonnegative(),
   favoritePlaceIds: z.array(z.string()).default([]),
